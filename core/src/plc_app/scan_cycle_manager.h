@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 typedef struct
 {
@@ -25,6 +26,14 @@ typedef struct
 void scan_cycle_time_start(void);
 void scan_cycle_time_end(void);
 
+int scan_cycle_manager_init(void);
+void scan_cycle_manager_cleanup(void);
+
+// log file
+bool open_log_file(void);
+void close_log_file(void);
+extern FILE *jitter_log;
+
 // Thread-safe function to get a snapshot of timing stats
 // Returns true if stats are valid (scan_count > 0), false otherwise
 bool get_timing_stats_snapshot(plc_timing_stats_t *snapshot);
@@ -32,12 +41,5 @@ bool get_timing_stats_snapshot(plc_timing_stats_t *snapshot);
 // Format timing stats as a response string for the STATS command
 // Returns the number of characters written (excluding null terminator)
 int format_timing_stats_response(char *buffer, size_t buffer_size);
-
-// Initialize scan cycle manager (sets up priority-inheriting mutex)
-// Must be called before the scan cycle loop starts
-int scan_cycle_manager_init(void);
-
-// Cleanup scan cycle manager resources
-void scan_cycle_manager_cleanup(void);
 
 #endif // SCAN_CYCLE_MANAGER_H

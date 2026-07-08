@@ -73,6 +73,13 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+
+
+    //log file
+    open_log_file();
+
+
+
     // Handle SIGINT for graceful shutdown
     struct sigaction sa;
     sa.sa_handler = handle_sigint;
@@ -104,7 +111,7 @@ int main(int argc, char *argv[])
     plugin_driver = plugin_driver_create();
     if (plugin_driver)
     {
-        // Make plugin driver available to unix socket for PLUGIN_CMD routing
+    	// Make plugin driver available to unix socket for PLUGIN_CMD routing
         unix_socket_set_plugin_driver(plugin_driver);
         log_info("[PLUGIN]: Plugin driver system created");
         if (plugin_driver_load_config(plugin_driver, "./plugins.conf") == 0)
@@ -151,6 +158,9 @@ int main(int argc, char *argv[])
     {
         plugin_driver_destroy(plugin_driver);
     }
+
+    //log file
+    close_log_file();
 
     // Cleanup
     log_info("Shutting down...");

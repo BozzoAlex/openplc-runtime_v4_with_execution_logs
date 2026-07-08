@@ -17,7 +17,10 @@
 
 static uint64_t expected_start_us  = 0;
 static uint64_t last_start_us      = 0;
-static pthread_mutex_t stats_mutex;
+static uint64_t current_scan_start_us = 0;
+static uint64_t previous_scan_start_us = 0;
+static int64_t last_execution_time_us = 0;
+static pthread_mutex_t stats_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 plc_timing_stats_t plc_timing_stats = {.scan_time_min     = INT64_MAX,
                                        .cycle_latency_min = INT64_MAX,
@@ -27,6 +30,20 @@ plc_timing_stats_t plc_timing_stats = {.scan_time_min     = INT64_MAX,
                                        .scan_count        = 0,
                                        .overruns          = 0};
 
+
+// log file
+FILE *jitter_log = NULL;
+
+int scan_cycle_manager_init(void)
+{
+    return 0;
+}
+
+void scan_cycle_manager_cleanup(void)
+{
+    close_log_file();
+}
+
 static uint64_t ts_now_us(void)
 {
     struct timespec ts;
@@ -34,9 +51,31 @@ static uint64_t ts_now_us(void)
     return (uint64_t)ts.tv_sec * 1000000ull + ts.tv_nsec / 1000;
 }
 
+bool open_log_file(void)
+{
+    jitter_log = fopen("log.csv", "w");
+    if (jitter_log == NULL)
+    {
+        perror("Failed to open file");
+        return false;
+    }
+    return true;
+}
+
+void close_log_file(void)
+{
+    if (jitter_log != NULL)
+    {
+        fflush(jitter_log);
+        fclose(jitter_log);
+        jitter_log = NULL;
+    }
+}
+
 void scan_cycle_time_start(void)
 {
     uint64_t now_us = ts_now_us();
+    current_scan_start_us = now_us;
 
     pthread_mutex_lock(&stats_mutex);
 
@@ -77,6 +116,7 @@ void scan_cycle_time_start(void)
     plc_timing_stats.cycle_latency_avg +=
         (latency_us - plc_timing_stats.cycle_latency_avg) / plc_timing_stats.scan_count;
 
+    previous_scan_start_us = last_start_us;
     last_start_us = now_us;
     expected_start_us += *ext_common_ticktime__ / 1000; // Convert ns to us
 
@@ -88,6 +128,8 @@ void scan_cycle_time_start(void)
 void scan_cycle_time_end(void)
 {
     uint64_t now_us = ts_now_us();
+    int64_t execution_time_us = now_us - current_scan_start_us;
+    last_execution_time_us = execution_time_us;
 
     pthread_mutex_lock(&stats_mutex);
 
@@ -110,6 +152,25 @@ void scan_cycle_time_end(void)
         plc_timing_stats.overruns++;
     }
 
+
+    //Calculate the jitter
+    int64_t expected_period_us = *ext_common_ticktime__ / 1000; // Convert ns to us
+    int64_t actual_period_us = current_scan_start_us - previous_scan_start_us;
+    int64_t jitter_us = actual_period_us - expected_period_us;
+
+    // Log cycle data to file
+    if (plc_timing_stats.scan_count <= 720001)
+    {
+        fprintf(jitter_log, "%ld,%ld,%ld\n", plc_timing_stats.scan_count, execution_time_us, jitter_us);
+    }
+    else if (plc_timing_stats.scan_count == 720002)
+    {
+        close_log_file();
+    }
+
+
+
+
     pthread_mutex_unlock(&stats_mutex);
 }
 
@@ -125,16 +186,6 @@ bool get_timing_stats_snapshot(plc_timing_stats_t *snapshot)
     pthread_mutex_unlock(&stats_mutex);
 
     return snapshot->scan_count > 0;
-}
-
-int scan_cycle_manager_init(void)
-{
-    return init_rt_mutex(&stats_mutex);
-}
-
-void scan_cycle_manager_cleanup(void)
-{
-    pthread_mutex_destroy(&stats_mutex);
 }
 
 int format_timing_stats_response(char *buffer, size_t buffer_size)
